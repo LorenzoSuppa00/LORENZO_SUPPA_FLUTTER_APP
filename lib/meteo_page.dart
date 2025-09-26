@@ -26,11 +26,20 @@ class _MeteoPageState extends State<MeteoPage> {
   int? _code; // weathercode
   double? _wind; // km/h
   int? _windDir; // °
-  String? _timeIso; // ISO8601
+  DateTime? _updatedAt;
 
   // CTA posizione
   bool _showLocCta = false;
   bool _permForever = false;
+
+  String _fmtTime(DateTime t, {bool withDate = false}) {
+    final hh = t.hour.toString().padLeft(2, '0');
+    final mm = t.minute.toString().padLeft(2, '0');
+    if (!withDate) return '$hh:$mm';
+    final dd = t.day.toString().padLeft(2, '0');
+    final mo = t.month.toString().padLeft(2, '0');
+    return '$dd/$mo $hh:$mm';
+  }
 
   @override
   void initState() {
@@ -172,7 +181,7 @@ class _MeteoPageState extends State<MeteoPage> {
       final r = await http.get(
         Uri.parse(
           'https://api.open-meteo.com/v1/forecast'
-          '?latitude=$lat&longitude=$lon&current_weather=true',
+          '?latitude=$lat&longitude=$lon&current_weather=true&timezone=auto',
         ),
       );
       if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
@@ -220,7 +229,9 @@ class _MeteoPageState extends State<MeteoPage> {
         _code = (cw['weathercode'] as num?)?.toInt();
         _wind = (cw['windspeed'] as num?)?.toDouble();
         _windDir = (cw['winddirection'] as num?)?.toInt();
-        _timeIso = cw['time'] as String?;
+
+        // Aggiornato (ora del dispositivo, precisa al momento del fetch)
+        _updatedAt = DateTime.now();
       });
     } catch (e) {
       setState(() => _error = e.toString());
@@ -331,7 +342,8 @@ class _MeteoPageState extends State<MeteoPage> {
                       : 'Vento: ${_wind!.toStringAsFixed(1)} km/h'
                             '${_windDir == null ? '' : ' (dir $_windDir°)'}',
                 ),
-                if (_timeIso != null) Text('Aggiornato: $_timeIso'),
+                if (_updatedAt != null)
+                  Text('Aggiornato: ${_fmtTime(_updatedAt!)}'),
               ],
             ),
             trailing: const Icon(Icons.chevron_right),
