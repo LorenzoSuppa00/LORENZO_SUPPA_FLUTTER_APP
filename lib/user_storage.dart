@@ -1,50 +1,62 @@
+// lib/user_storage.dart
 import 'dart:convert';
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'models/user.dart';
 
+/// --- Mobile imports ---
+import 'dart:io' as io;
+import 'package:path_provider/path_provider.dart';
+
+/// --- Web imports ---
+import 'package:shared_preferences/shared_preferences.dart';
+
 class UserStorage {
-  Future<String> get _localPath async {
-    final dir = await getApplicationDocumentsDirectory();
-    return dir.path;
-  }
-
-  Future<File> get _localFile async {
-    final path = await _localPath;
-    return File('$path/users.json');
-  }
-
-  Future<void> saveUsers(List<User> users) async {
-    final file = await _localFile;
-    final jsonString = jsonEncode(users.map((u) => u.toJson()).toList());
-    await file.writeAsString(jsonString);
-  }
+  static const _spKey = 'users_json';
 
   Future<List<User>> loadUsers() async {
-    try {
-      final file = await _localFile;
-      if (await file.exists()) {
-        final contents = await file.readAsString();
-        final List<dynamic> data = jsonDecode(contents);
-        return data.map((e) => User.fromJson(e)).toList();
-      } else {
-        return [];
-      }
-    } catch (e) {
-      return [];
+    if (kIsWeb) {
+      final sp = await SharedPreferences.getInstance();
+      final raw = sp.getString(_spKey);
+      if (raw == null || raw.isEmpty) return [];
+      final List data = jsonDecode(raw) as List;
+      return data.map((e) => User.fromJson(e as Map<String, dynamic>)).toList();
+    } else {
+      final path = await filePath();
+      final f = io.File(path);
+      if (!await f.exists()) return [];
+      final raw = await f.readAsString();
+      if (raw.trim().isEmpty) return [];
+      final List data = jsonDecode(raw) as List;
+      return data.map((e) => User.fromJson(e as Map<String, dynamic>)).toList();
     }
   }
 
-  // Ritorna il path completo del file users.json
-  Future<String> filePath() async {
-    final f = await _localFile;
-    return f.path;
+  Future<void> saveUsers(List<User> users) async {
+    final raw = jsonEncode(users.map((e) => e.toJson()).toList());
+    if (kIsWeb) {
+      final sp = await SharedPreferences.getInstance();
+      await sp.setString(_spKey, raw);
+    } else {
+      final path = await filePath();
+      final f = io.File(path);
+      await f.writeAsString(raw);
+    }
   }
 
-  // Ritorna il contenuto raw del JSON (o [] se il file non esiste ancora)
   Future<String> readRawJson() async {
-    final f = await _localFile;
-    if (await f.exists()) return await f.readAsString();
-    return '[]';
+    if (kIsWeb) {
+      final sp = await SharedPreferences.getInstance();
+      return sp.getString(_spKey) ?? '[]';
+    } else {
+      final path = await filePath();
+      final f = io.File(path);
+      return (await f.exists()) ? await f.readAsString() : '[]';
+    }
+  }
+
+  Future<String> filePath() async {
+    if (kIsWeb) return 'browser-localstorage://$_spKey';
+    final dir = await getApplicationDocumentsDirectory();
+    return '${dir.path}/users.json';
   }
 }

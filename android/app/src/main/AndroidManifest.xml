@@ -3,7 +3,7 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
 
     <application
-        android:label="eirsaf"
+        android:label="App CRUD + Meteo"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

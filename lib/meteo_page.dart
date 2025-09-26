@@ -1,5 +1,6 @@
-// meteo_page.dart
+// lib/meteo_page.dart
 import 'dart:convert';
+import 'package:flutter/foundation.dart'; // kIsWeb
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
@@ -21,13 +22,13 @@ class _MeteoPageState extends State<MeteoPage> {
   String? _locality, _country;
 
   // Meteo
-  double? _temp;      // °C
-  int? _code;         // weathercode
-  double? _wind;      // km/h
-  int? _windDir;      // °
-  String? _timeIso;   // ISO8601
+  double? _temp;     // °C
+  int? _code;        // weathercode
+  double? _wind;     // km/h
+  int? _windDir;     // °
+  String? _timeIso;  // ISO8601
 
-  // CTA permessi/servizi
+  // CTA posizione
   bool _showLocCta = false;
   bool _permForever = false;
 
@@ -37,44 +38,48 @@ class _MeteoPageState extends State<MeteoPage> {
     _loadWeather();
   }
 
-  Future<bool> _ensureLocationReady() async {
-    // servizi attivi?
+  Future<Position> _getPosition() async {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      setState(() {
-        _showLocCta = true;
-        _permForever = false;
-      });
-      return false;
+      if (mounted) {
+        setState(() {
+          _showLocCta = true;
+          _permForever = false;
+        });
+      }
     }
 
-    // permessi
     var permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
-    }
-
-    if (permission == LocationPermission.denied) {
-      setState(() {
-        _showLocCta = true;
-        _permForever = false;
-      });
-      return false;
+      if (permission == LocationPermission.denied) {
+        if (mounted) {
+          setState(() {
+            _showLocCta = true;
+            _permForever = false;
+          });
+        }
+        throw Exception('Permesso posizione negato');
+      }
     }
 
     if (permission == LocationPermission.deniedForever) {
-      setState(() {
-        _showLocCta = true;
-        _permForever = true;
-      });
-      return false;
+      if (mounted) {
+        setState(() {
+          _showLocCta = true;
+          _permForever = true;
+        });
+      }
+      throw Exception('Permesso negato in modo permanente');
     }
 
-    setState(() {
-      _showLocCta = false;
-      _permForever = false;
-    });
-    return true;
+    if (mounted) {
+      setState(() {
+        _showLocCta = false;
+        _permForever = false;
+      });
+    }
+    return Geolocator.getCurrentPosition();
   }
 
   String _descFromCode(int c) {
@@ -100,52 +105,103 @@ class _MeteoPageState extends State<MeteoPage> {
     return Icons.cloud_queue;
   }
 
+  Future<Map<String, String?>> _reverseGeocodeWeb(double lat, double lon) async {
+    // Tentativo 1: Open-Meteo
+    Future<Map<String, String?>> _tryOpenMeteo() async {
+      final u = Uri.parse(
+        'https://geocoding-api.open-meteo.com/v1/reverse'
+        '?latitude=$lat&longitude=$lon&language=it&count=1',
+      );
+      final r = await http.get(u);
+      if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
+      final data = jsonDecode(r.body);
+      final list = (data['results'] as List?) ?? const [];
+      if (list.isEmpty) return {'loc': null, 'country': null};
+      final m = list.first as Map<String, dynamic>;
+      final loc = (m['name'] as String?) ??
+          (m['admin1'] as String?) ??
+          (m['admin2'] as String?);
+      final country = m['country'] as String?;
+      return {'loc': loc, 'country': country};
+    }
+
+    // Tentativo 2: BigDataCloud (fallback, CORS aperto)
+    Future<Map<String, String?>> _tryBDC() async {
+      final u = Uri.parse(
+        'https://api.bigdatacloud.net/data/reverse-geocode-client'
+        '?latitude=$lat&longitude=$lon&localityLanguage=it',
+      );
+      final r = await http.get(u);
+      if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
+      final data = jsonDecode(r.body) as Map<String, dynamic>;
+      final loc = (data['city'] as String?) ??
+          (data['locality'] as String?) ??
+          (data['principalSubdivision'] as String?);
+      final country = data['countryName'] as String?;
+      return {'loc': loc, 'country': country};
+    }
+
+    try {
+      final v = await _tryOpenMeteo();
+      if (v['loc'] != null || v['country'] != null) return v;
+    } catch (_) {}
+    try {
+      final v = await _tryBDC();
+      if (v['loc'] != null || v['country'] != null) return v;
+    } catch (_) {}
+    return {'loc': null, 'country': null};
+  }
+
   Future<void> _loadWeather() async {
     setState(() {
       _loading = true;
       _error = null;
     });
-
     try {
-      final ready = await _ensureLocationReady();
-      if (!ready) {
-        // Mostra CTA, non è un errore.
-        return;
-      }
-
-      final pos = await Geolocator.getCurrentPosition();
+      // Posizione
+      final pos = await _getPosition();
       final lat = pos.latitude;
       final lon = pos.longitude;
 
+      // Meteo corrente
       final r = await http.get(Uri.parse(
-        'https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current_weather=true',
+        'https://api.open-meteo.com/v1/forecast'
+        '?latitude=$lat&longitude=$lon&current_weather=true',
       ));
       if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
-
       final data = jsonDecode(r.body);
-      final cw = data['current_weather'] as Map<String, dynamic>?;
+      final cw = data['current_weather'];
       if (cw == null) throw Exception('Dati meteo non disponibili');
 
+      // Reverse geocoding
       String? loc;
       String? country;
-      try {
-        final places = await gc.placemarkFromCoordinates(
-          lat,
-          lon,
-          localeIdentifier: 'it_IT',
-        );
-        if (places.isNotEmpty) {
-          final p = places.first;
-          loc = (p.locality?.isNotEmpty == true)
-              ? p.locality
-              : (p.subAdministrativeArea?.isNotEmpty == true
-                  ? p.subAdministrativeArea
-                  : (p.administrativeArea?.isNotEmpty == true
-                      ? p.administrativeArea
-                      : null));
-          country = p.country;
-        }
-      } catch (_) {}
+      if (kIsWeb) {
+        try {
+          final g = await _reverseGeocodeWeb(lat, lon);
+          loc = g['loc'];
+          country = g['country'];
+        } catch (_) {}
+      } else {
+        try {
+          final places = await gc.placemarkFromCoordinates(
+            lat,
+            lon,
+            localeIdentifier: 'it_IT',
+          );
+          if (places.isNotEmpty) {
+            final p = places.first;
+            loc = (p.locality?.isNotEmpty == true)
+                ? p.locality
+                : (p.subAdministrativeArea?.isNotEmpty == true
+                    ? p.subAdministrativeArea
+                    : (p.administrativeArea?.isNotEmpty == true
+                        ? p.administrativeArea
+                        : null));
+            country = p.country;
+          }
+        } catch (_) {}
+      }
 
       setState(() {
         _lat = lat;
@@ -166,7 +222,6 @@ class _MeteoPageState extends State<MeteoPage> {
     }
   }
 
-  // CTA: bottoni sotto al testo (no trailing)
   Widget _buildLocationCta(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Card(
@@ -202,7 +257,8 @@ class _MeteoPageState extends State<MeteoPage> {
                   onPressed: _permForever
                       ? Geolocator.openAppSettings
                       : Geolocator.openLocationSettings,
-                  child: Text(_permForever ? 'Impostazioni app' : 'Impostazioni GPS'),
+                  child:
+                      Text(_permForever ? 'Impostazioni app' : 'Impostazioni GPS'),
                 ),
                 const SizedBox(width: 12),
                 FilledButton(
@@ -217,7 +273,6 @@ class _MeteoPageState extends State<MeteoPage> {
     );
   }
 
-  // Solo le card di contenuto
   Widget _buildWeatherContent(ColorScheme cs) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -260,17 +315,19 @@ class _MeteoPageState extends State<MeteoPage> {
                 Text(_temp == null
                     ? 'Temperatura: —'
                     : 'Temperatura: ${_temp!.toStringAsFixed(1)}°C'),
-                Text(_wind == null
-                    ? 'Vento: —'
-                    : 'Vento: ${_wind!.toStringAsFixed(1)} km/h'
-                      '${_windDir == null ? '' : ' (dir $_windDir°)'}'),
+                Text(
+                  _wind == null
+                      ? 'Vento: —'
+                      : 'Vento: ${_wind!.toStringAsFixed(1)} km/h'
+                        '${_windDir == null ? '' : ' (dir $_windDir°)'}',
+                ),
                 if (_timeIso != null) Text('Aggiornato: $_timeIso'),
               ],
             ),
             trailing: const Icon(Icons.chevron_right),
           ),
         ),
-        const Spacer(),
+        const SizedBox(height: 12),
         Text(
           'Fonte: Open-Meteo',
           textAlign: TextAlign.center,
@@ -295,17 +352,24 @@ class _MeteoPageState extends State<MeteoPage> {
         padding: const EdgeInsets.all(12),
         child: _loading
             ? const Center(child: CircularProgressIndicator())
-            : _showLocCta
-                ? _buildLocationCta(context)
-                : (_error != null)
-                    ? Center(
+            : SingleChildScrollView(
+                child: Column(
+                  children: [
+                    if (_showLocCta) _buildLocationCta(context),
+                    if (!_showLocCta && _error != null)
+                      Padding(
+                        padding: const EdgeInsets.all(12),
                         child: Text(
                           'Errore: $_error',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: cs.error),
                         ),
-                      )
-                    : _buildWeatherContent(cs),
+                      ),
+                    if (!_showLocCta && _error == null)
+                      _buildWeatherContent(cs),
+                  ],
+                ),
+              ),
       ),
     );
   }
