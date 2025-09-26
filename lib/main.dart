@@ -8,7 +8,11 @@ import 'login_page.dart';
 import 'models/user.dart';
 import 'user_storage.dart';
 import 'auth.dart';
-import 'login_page.dart';
+import 'dart:io'; // per download JSON
+import 'meteo_page.dart';
+import 'package:flutter_file_dialog/flutter_file_dialog.dart';
+import 'package:flutter_file_dialog/flutter_file_dialog.dart';
+import 'package:open_filex/open_filex.dart';
 
 void main() {
   runApp(const MyApp());
@@ -22,7 +26,33 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Eirsaf CRUD',
-      theme: ThemeData(primarySwatch: Colors.blue),
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
+        inputDecorationTheme: const InputDecorationTheme(
+          border: OutlineInputBorder(),
+          isDense: true,
+        ),
+        cardTheme: CardThemeData(
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        ),
+
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ButtonStyle(
+            padding: WidgetStatePropertyAll(
+              EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            ),
+            shape: WidgetStatePropertyAll(
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ),
+      ),
+
       home: FutureBuilder<bool>(
         future: Auth().isLoggedIn(),
         builder: (context, snap) {
@@ -60,13 +90,115 @@ class _UsersPageState extends State<UsersPage> {
   final List<User> _users = [];
   final UserStorage _storage = UserStorage();
   int _nextId = 1;
-
+  final _searchCtrl = TextEditingController();
+  String _query = '';
   String? _weatherText; // es: "24.3°C, Sereno"
 
   @override
   void initState() {
     super.initState();
     _loadUsers();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  List<User> get _filteredUsers {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return _users;
+    return _users.where((u) {
+      final n = u.name.toLowerCase();
+      final e = u.email.toLowerCase();
+      return n.contains(q) || e.contains(q) || u.id.toString() == q;
+    }).toList();
+  }
+
+Future<void> _downloadJson() async {
+  try {
+    final srcPath = await _storage.filePath();
+
+    final params = SaveFileDialogParams(
+      sourceFilePath: srcPath,
+      fileName: 'users.json',
+      mimeTypesFilter: ['application/json', 'text/plain'],
+    );
+
+    final savedPath = await FlutterFileDialog.saveFile(params: params);
+    if (!mounted) return;
+
+    if (savedPath == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Salvataggio annullato')),
+      );
+      return;
+    }
+
+    // Prova ad aprire automaticamente
+    try {
+      final res = await OpenFilex.open(savedPath);
+      if (res.type != ResultType.done) {
+        // fallback: share sheet (l'utente può aprirlo con l'app preferita)
+        await Share.shareXFiles(
+          [XFile(savedPath, mimeType: 'application/json', name: 'users.json')],
+        );
+      }
+    } on MissingPluginException {
+      // fallback se il plugin non è registrato (es. dopo hot-reload)
+      await Share.shareXFiles(
+        [XFile(savedPath, mimeType: 'application/json', name: 'users.json')],
+      );
+    }
+  } catch (e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('Errore: ${e.toString()}')));
+  }
+}
+
+
+
+
+  String _initials(String name) {
+    final parts = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts.first[0].toUpperCase();
+    return (parts.first[0] + parts.last[0]).toUpperCase();
+  }
+
+  Future<void> _confirmDelete(User user) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Eliminare utente?'),
+        content: Text('Sei sicuro di voler eliminare "${user.name}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annulla'),
+          ),
+          FilledButton(
+            style: ButtonStyle(
+              backgroundColor: WidgetStatePropertyAll(
+                Theme.of(context).colorScheme.error,
+              ),
+              foregroundColor: const WidgetStatePropertyAll(Colors.white),
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Elimina'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      _deleteUser(user);
+    }
   }
 
   Future<void> _loadUsers() async {
@@ -108,6 +240,7 @@ class _UsersPageState extends State<UsersPage> {
   }
 
   void _showUserDialog({User? user}) {
+    final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController(text: user?.name ?? '');
     final emailController = TextEditingController(text: user?.email ?? '');
 
@@ -115,30 +248,53 @@ class _UsersPageState extends State<UsersPage> {
       context: context,
       builder: (_) => AlertDialog(
         title: Text(user == null ? 'Aggiungi utente' : 'Modifica utente'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(labelText: 'Nome'),
-            ),
-            TextField(
-              controller: emailController,
-              decoration: const InputDecoration(labelText: 'Email'),
-            ),
-          ],
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'Nome'),
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? 'Inserisci un nome'
+                    : null,
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: emailController,
+                decoration: const InputDecoration(labelText: 'Email'),
+                keyboardType: TextInputType.emailAddress,
+                validator: (v) {
+                  final s = v?.trim() ?? '';
+                  if (s.isEmpty) return 'Inserisci un’email';
+                  final re = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+                  if (!re.hasMatch(s)) return 'Email non valida';
+                  return null;
+                },
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Annulla'),
           ),
-          ElevatedButton(
+          FilledButton(
             onPressed: () {
+              if (formKey.currentState?.validate() != true) return;
               if (user == null) {
-                _addUser(nameController.text, emailController.text);
+                _addUser(
+                  nameController.text.trim(),
+                  emailController.text.trim(),
+                );
               } else {
-                _updateUser(user, nameController.text, emailController.text);
+                _updateUser(
+                  user,
+                  nameController.text.trim(),
+                  emailController.text.trim(),
+                );
               }
               Navigator.pop(context);
             },
@@ -216,7 +372,17 @@ class _UsersPageState extends State<UsersPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Gestione Utenti'),
+        title: Row(
+          children: [
+            const Text('Gestione Utenti'),
+            const SizedBox(width: 12),
+            Chip(
+              label: Text('${_users.length}'),
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
+        ),
+
         actions: [
           // Mostra path + contenuto JSON in un dialog
           IconButton(
@@ -259,38 +425,38 @@ class _UsersPageState extends State<UsersPage> {
             },
           ),
           // Meteo dalla posizione
-          IconButton(
-            icon: const Icon(Icons.cloud_outlined),
-            tooltip: 'Meteo (mia posizione)',
-            onPressed: _fetchWeatherFromDevice,
-          ),
-          IconButton(
-            icon: const Icon(Icons.share),
-            tooltip: 'Esporta users.json',
-            onPressed: _exportJson,
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Logout',
-            onPressed: () async {
-              await Auth().logout();
-              if (!context.mounted) return;
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => LoginPage(
-                    onLogin: (ctx) {
-                      Navigator.pushReplacement(
-                        ctx,
-                        MaterialPageRoute(builder: (_) => const UsersPage()),
-                      );
-                    },
-                  ),
-                ),
-                (_) => false,
-              );
-            },
-          ),
+          // IconButton(
+          //   icon: const Icon(Icons.cloud_outlined),
+          //   tooltip: 'Meteo (mia posizione)',
+          //   onPressed: _fetchWeatherFromDevice,
+          // ),
+          // IconButton(
+          //   icon: const Icon(Icons.share),
+          //   tooltip: 'Esporta users.json',
+          //   onPressed: _exportJson,
+          // ),
+          // IconButton(
+          //   icon: const Icon(Icons.logout),
+          //   tooltip: 'Logout',
+          //   onPressed: () async {
+          //     await Auth().logout();
+          //     if (!context.mounted) return;
+          //     Navigator.pushAndRemoveUntil(
+          //       context,
+          //       MaterialPageRoute(
+          //         builder: (_) => LoginPage(
+          //           onLogin: (ctx) {
+          //             Navigator.pushReplacement(
+          //               ctx,
+          //               MaterialPageRoute(builder: (_) => const UsersPage()),
+          //             );
+          //           },
+          //         ),
+          //       ),
+          //       (_) => false,
+          //     );
+          //   },
+          // ),
         ],
       ),
       body: Column(
@@ -300,24 +466,69 @@ class _UsersPageState extends State<UsersPage> {
               padding: const EdgeInsets.all(8.0),
               child: Card(
                 child: ListTile(
-                  leading: const Icon(Icons.cloud),
+                  leading: const Icon(Icons.cloud_queue),
                   title: const Text('Meteo attuale'),
                   subtitle: Text(_weatherText!),
+                  trailing: const Icon(Icons.chevron_right),
                 ),
               ),
             ),
+
+          // 🔎 Barra di ricerca
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            child: TextField(
+              controller: _searchCtrl,
+              onChanged: (v) => setState(() => _query = v),
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: 'Cerca per nome o email…',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() => _query = '');
+                        },
+                      ),
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ),
+
           Expanded(
             child: ListView.builder(
-              itemCount: _users.length,
+              itemCount: _filteredUsers.length,
               itemBuilder: (context, index) {
-                final user = _users[index];
-                return ListTile(
-                  title: Text(user.name),
-                  subtitle: Text(user.email),
-                  onTap: () => _showUserDialog(user: user),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red),
-                    onPressed: () => _deleteUser(user),
+                final user = _filteredUsers[index];
+                return Card(
+                  child: ListTile(
+                    leading: CircleAvatar(child: Text(_initials(user.name))),
+                    title: Text(
+                      user.name,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(user.email),
+                    onTap: () => _showUserDialog(user: user),
+                    trailing: Wrap(
+                      spacing: 4,
+                      children: [
+                        IconButton(
+                          tooltip: 'Modifica',
+                          icon: const Icon(Icons.edit),
+                          onPressed: () => _showUserDialog(user: user),
+                        ),
+                        IconButton(
+                          tooltip: 'Elimina',
+                          icon: const Icon(Icons.delete_outline),
+                          color: Theme.of(context).colorScheme.error,
+                          onPressed: () => _confirmDelete(user),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               },
@@ -325,10 +536,83 @@ class _UsersPageState extends State<UsersPage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
+
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showUserDialog(),
-        child: const Icon(Icons.add),
+        icon: const Icon(Icons.person_add_alt),
+        label: const Text('Aggiungi utente'),
       ),
+
+      drawer: Drawer(
+  child: SafeArea(
+    child: ListView(
+      children: [
+        const DrawerHeader(
+          child: ListTile(
+            leading: Icon(Icons.apps),
+            title: Text('Menu'),
+            subtitle: Text('Eirsaf Demo'),
+          ),
+        ),
+
+        ListTile(
+          leading: const Icon(Icons.people),
+          title: const Text('Gestione Utenti'),
+          onTap: () {
+            Navigator.pop(context); // sei già su questa pagina
+          },
+        ),
+
+        ListTile(
+          leading: const Icon(Icons.cloud),
+          title: const Text('Meteo'),
+          onTap: () {
+            Navigator.pop(context);
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MeteoPage()),
+            );
+          },
+        ),
+
+        ListTile(
+          leading: const Icon(Icons.file_download),
+          title: const Text('Scarica dati (JSON)'),
+          onTap: () {
+            Navigator.pop(context);
+            _downloadJson(); // usa il tuo metodo già presente
+          },
+        ),
+
+        const Divider(),
+
+        ListTile(
+          leading: const Icon(Icons.logout),
+          title: const Text('Logout'),
+          onTap: () async {
+            await Auth().logout();
+            if (!context.mounted) return;
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(
+                builder: (_) => LoginPage(
+                  onLogin: (ctx) {
+                    Navigator.pushReplacement(
+                      ctx,
+                      MaterialPageRoute(builder: (_) => const UsersPage()),
+                    );
+                  },
+                ),
+              ),
+              (_) => false,
+            );
+          },
+        ),
+      ],
+    ),
+  ),
+),
+
     );
   }
 
