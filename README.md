@@ -1,16 +1,18 @@
-# eirsaf
+# 📱 Eirsaf Demo – Gestione Utenti + Meteo
 
-A new Flutter project.
+Demo Flutter realizzata per il colloquio.  
+L’app include tre sezioni principali:
 
-## Getting Started
+- **Login**
 
-This project is a starting point for a Flutter application.
+- **Gestione Utenti**  
+  - Creazione, modifica, eliminazione utenti (nome, email).  
+  - Ricerca rapida.  
+  - Dati salvati in JSON locale con storage persistente.  
+  - Possibilità di esportare il file JSON.  
 
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+- **Meteo**  
+  - Recupero posizione tramite GPS (Geolocator).  
+  - Reverse geocoding per mostrare città e nazione.  
+  - Dati meteo correnti forniti da [Open-Meteo](https://open-meteo.com).  
+  - Visualizzazione di temperatura, condizioni atmosferiche, vento, orario aggiornamento. 
