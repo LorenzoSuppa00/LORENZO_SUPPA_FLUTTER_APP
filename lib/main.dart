@@ -1,6 +1,5 @@
-import 'dart:convert'; // per decodificare la risposta meteo
+import 'dart:convert'; 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // per Clipboard (copia JSON)
 import 'package:share_plus/share_plus.dart';
 import 'login_page.dart';
 import 'models/user.dart';
@@ -20,32 +19,51 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Eirsaf CRUD',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
-        inputDecorationTheme: const InputDecorationTheme(
-          border: OutlineInputBorder(),
-          isDense: true,
-        ),
-        cardTheme: CardThemeData(
-          elevation: 2,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        ),
+theme: (() {
+  final scheme = ColorScheme.fromSeed(seedColor: Colors.indigo);
+  return ThemeData(
+    useMaterial3: true,
+    colorScheme: scheme,
+    scaffoldBackgroundColor: scheme.surface,
 
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ButtonStyle(
-            padding: WidgetStatePropertyAll(
-              EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            ),
-            shape: WidgetStatePropertyAll(
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-          ),
-        ),
-      ),
+    appBarTheme: AppBarTheme(
+      backgroundColor: scheme.primary,
+      foregroundColor: scheme.onPrimary,
+      elevation: 0,
+      centerTitle: false,
+      titleTextStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+    ),
+
+    floatingActionButtonTheme: FloatingActionButtonThemeData(
+      backgroundColor: scheme.primary,
+      foregroundColor: scheme.onPrimary,
+      elevation: 3,
+      extendedTextStyle: const TextStyle(fontWeight: FontWeight.w600),
+    ),
+
+    cardTheme: CardThemeData(
+      elevation: 1,
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      surfaceTintColor: Colors.transparent, // niente “tinta” M3
+    ),
+
+    inputDecorationTheme: InputDecorationTheme(
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      isDense: true,
+      filled: true,
+      fillColor: scheme.surfaceVariant.withOpacity(.6),
+    ),
+
+    listTileTheme: ListTileThemeData(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      iconColor: scheme.primary,
+    ),
+
+    dividerTheme: DividerThemeData(color: scheme.outlineVariant),
+  );
+})(),
+
 
       home: FutureBuilder<bool>(
         future: Auth().isLoggedIn(),
