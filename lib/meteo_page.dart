@@ -47,49 +47,55 @@ class _MeteoPageState extends State<MeteoPage> {
     _loadWeather();
   }
 
-  Future<Position> _getPosition() async {
-    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
+Future<Position> _getPosition() async {
+  final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+  if (!serviceEnabled) {
+    if (mounted) {
+      setState(() {
+        _showLocCta = true;
+        _permForever = false;
+      });
+    }
+    // Fermiamo qui il flusso: mostriamo la CTA, niente eccezione "rossa"
+    return Future.error('Servizi di localizzazione disattivati');
+  }
+
+  var permission = await Geolocator.checkPermission();
+  if (permission == LocationPermission.denied) {
+    permission = await Geolocator.requestPermission();
+    if (permission == LocationPermission.denied) {
       if (mounted) {
         setState(() {
           _showLocCta = true;
           _permForever = false;
         });
       }
+      return Future.error('Permesso posizione negato');
     }
+  }
 
-    var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        if (mounted) {
-          setState(() {
-            _showLocCta = true;
-            _permForever = false;
-          });
-        }
-        throw Exception('Permesso posizione negato');
-      }
-    }
-
-    if (permission == LocationPermission.deniedForever) {
-      if (mounted) {
-        setState(() {
-          _showLocCta = true;
-          _permForever = true;
-        });
-      }
-      throw Exception('Permesso negato in modo permanente');
-    }
-
+  if (permission == LocationPermission.deniedForever) {
     if (mounted) {
       setState(() {
-        _showLocCta = false;
-        _permForever = false;
+        _showLocCta = true;
+        _permForever = true;
       });
     }
-    return Geolocator.getCurrentPosition();
+    return Future.error('Permesso negato in modo permanente');
   }
+
+  if (mounted) {
+    setState(() {
+      _showLocCta = false;
+      _permForever = false;
+    });
+  }
+
+  return Geolocator.getCurrentPosition(
+    desiredAccuracy: LocationAccuracy.high,
+    // timeLimit: const Duration(seconds: 15), // opzionale
+  );
+}
 
   String _descFromCode(int c) {
     if (c == 0) return 'Sereno';
