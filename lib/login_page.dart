@@ -11,11 +11,11 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final emailCtrl = TextEditingController();
-  final passCtrl  = TextEditingController();
+  final passCtrl = TextEditingController();
   bool obscure = true;
 
-  bool isLogin = true;        // toggle Login/Registrazione
-  bool hasAccount = false;    // solo per sapere se esiste già qualcosa salvato
+  bool isLogin = true; // toggle Login/Registrazione
+  bool hasAccount = false; // solo per sapere se esiste già qualcosa salvato
 
   @override
   void initState() {
@@ -38,7 +38,7 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _submit() async {
     final email = emailCtrl.text.trim();
-    final pass  = passCtrl.text;
+    final pass = passCtrl.text;
     if (email.isEmpty || pass.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Inserisci email e password')),
@@ -52,10 +52,18 @@ class _LoginPageState extends State<LoginPage> {
         context: context,
         builder: (_) => AlertDialog(
           title: const Text('Sovrascrivere account?'),
-          content: const Text('Esiste già un account salvato. Vuoi sostituirlo con le nuove credenziali?'),
+          content: const Text(
+            'Esiste già un account salvato. Vuoi sostituirlo con le nuove credenziali?',
+          ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annulla')),
-            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Sì, sostituisci')),
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Annulla'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Sì, sostituisci'),
+            ),
           ],
         ),
       );
@@ -73,69 +81,107 @@ class _LoginPageState extends State<LoginPage> {
     if (ok) {
       widget.onLogin(context);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Credenziali non valide')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Credenziali non valide')));
     }
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
-    final selStyle = ButtonStyle(
-      backgroundColor: WidgetStateProperty.resolveWith<Color?>(
-        (states) => states.contains(WidgetState.selected) ? Theme.of(context).colorScheme.primary : null,
+    final theme = Theme.of(context);
+
+    InputDecoration dec(String label, {Widget? suffix}) => InputDecoration(
+      labelText: label,
+      filled: true,
+      fillColor: theme.colorScheme.surfaceVariant.withOpacity(.35),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: theme.colorScheme.outlineVariant),
       ),
-      foregroundColor: WidgetStateProperty.resolveWith<Color?>(
-        (states) => states.contains(WidgetState.selected) ? Colors.white : null,
-      ),
+      suffixIcon: suffix,
     );
 
     return Scaffold(
       appBar: AppBar(title: const Text('Autenticazione')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // Toggle Accedi / Crea account
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                FilterChip(
-                  label: const Text('Accedi'),
-                  selected: isLogin,
-                  onSelected: (_) => setState(() => isLogin = true),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Card(
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                const SizedBox(width: 8),
-                FilterChip(
-                  label: const Text('Crea account'),
-                  selected: !isLogin,
-                  onSelected: (_) => setState(() => isLogin = false),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: emailCtrl,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(labelText: 'Email'),
-            ),
-            TextField(
-              controller: passCtrl,
-              obscureText: obscure,
-              decoration: InputDecoration(
-                labelText: 'Password',
-                suffixIcon: IconButton(
-                  icon: Icon(obscure ? Icons.visibility : Icons.visibility_off),
-                  onPressed: () => setState(() => obscure = !obscure),
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Toggle Accedi / Crea account
+                      Center(
+                        child: Wrap(
+                          spacing: 8,
+                          children: [
+                            ChoiceChip(
+                              label: const Text('Accedi'),
+                              selected: isLogin,
+                              onSelected: (_) => setState(() => isLogin = true),
+                            ),
+                            ChoiceChip(
+                              label: const Text('Crea account'),
+                              selected: !isLogin,
+                              onSelected: (_) =>
+                                  setState(() => isLogin = false),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      TextField(
+                        controller: emailCtrl,
+                        keyboardType: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.next,
+                        decoration: dec('Email'),
+                      ),
+
+                      const SizedBox(height: 12), // 👉 spazio tra i campi
+
+                      TextField(
+                        controller: passCtrl,
+                        obscureText: obscure,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _submit(),
+                        decoration: dec(
+                          'Password',
+                          suffix: IconButton(
+                            icon: Icon(
+                              obscure ? Icons.visibility : Icons.visibility_off,
+                            ),
+                            onPressed: () => setState(() => obscure = !obscure),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      FilledButton(
+                        onPressed: _submit,
+                        child: Text(isLogin ? 'Entra' : 'Crea account'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: _submit,
-              child: Text(isLogin ? 'Entra' : 'Crea account'),
-            ),
-          ],
+          ),
         ),
       ),
     );

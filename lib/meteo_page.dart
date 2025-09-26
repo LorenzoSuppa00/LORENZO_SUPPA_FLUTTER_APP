@@ -22,11 +22,11 @@ class _MeteoPageState extends State<MeteoPage> {
   String? _locality, _country;
 
   // Meteo
-  double? _temp;     // °C
-  int? _code;        // weathercode
-  double? _wind;     // km/h
-  int? _windDir;     // °
-  String? _timeIso;  // ISO8601
+  double? _temp; // °C
+  int? _code; // weathercode
+  double? _wind; // km/h
+  int? _windDir; // °
+  String? _timeIso; // ISO8601
 
   // CTA posizione
   bool _showLocCta = false;
@@ -105,7 +105,10 @@ class _MeteoPageState extends State<MeteoPage> {
     return Icons.cloud_queue;
   }
 
-  Future<Map<String, String?>> _reverseGeocodeWeb(double lat, double lon) async {
+  Future<Map<String, String?>> _reverseGeocodeWeb(
+    double lat,
+    double lon,
+  ) async {
     // Tentativo 1: Open-Meteo
     Future<Map<String, String?>> _tryOpenMeteo() async {
       final u = Uri.parse(
@@ -118,7 +121,8 @@ class _MeteoPageState extends State<MeteoPage> {
       final list = (data['results'] as List?) ?? const [];
       if (list.isEmpty) return {'loc': null, 'country': null};
       final m = list.first as Map<String, dynamic>;
-      final loc = (m['name'] as String?) ??
+      final loc =
+          (m['name'] as String?) ??
           (m['admin1'] as String?) ??
           (m['admin2'] as String?);
       final country = m['country'] as String?;
@@ -134,7 +138,8 @@ class _MeteoPageState extends State<MeteoPage> {
       final r = await http.get(u);
       if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
       final data = jsonDecode(r.body) as Map<String, dynamic>;
-      final loc = (data['city'] as String?) ??
+      final loc =
+          (data['city'] as String?) ??
           (data['locality'] as String?) ??
           (data['principalSubdivision'] as String?);
       final country = data['countryName'] as String?;
@@ -164,10 +169,12 @@ class _MeteoPageState extends State<MeteoPage> {
       final lon = pos.longitude;
 
       // Meteo corrente
-      final r = await http.get(Uri.parse(
-        'https://api.open-meteo.com/v1/forecast'
-        '?latitude=$lat&longitude=$lon&current_weather=true',
-      ));
+      final r = await http.get(
+        Uri.parse(
+          'https://api.open-meteo.com/v1/forecast'
+          '?latitude=$lat&longitude=$lon&current_weather=true',
+        ),
+      );
       if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
       final data = jsonDecode(r.body);
       final cw = data['current_weather'];
@@ -194,10 +201,10 @@ class _MeteoPageState extends State<MeteoPage> {
             loc = (p.locality?.isNotEmpty == true)
                 ? p.locality
                 : (p.subAdministrativeArea?.isNotEmpty == true
-                    ? p.subAdministrativeArea
-                    : (p.administrativeArea?.isNotEmpty == true
-                        ? p.administrativeArea
-                        : null));
+                      ? p.subAdministrativeArea
+                      : (p.administrativeArea?.isNotEmpty == true
+                            ? p.administrativeArea
+                            : null));
             country = p.country;
           }
         } catch (_) {}
@@ -257,8 +264,9 @@ class _MeteoPageState extends State<MeteoPage> {
                   onPressed: _permForever
                       ? Geolocator.openAppSettings
                       : Geolocator.openLocationSettings,
-                  child:
-                      Text(_permForever ? 'Impostazioni app' : 'Impostazioni GPS'),
+                  child: Text(
+                    _permForever ? 'Impostazioni app' : 'Impostazioni GPS',
+                  ),
                 ),
                 const SizedBox(width: 12),
                 FilledButton(
@@ -312,14 +320,16 @@ class _MeteoPageState extends State<MeteoPage> {
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(_temp == null
-                    ? 'Temperatura: —'
-                    : 'Temperatura: ${_temp!.toStringAsFixed(1)}°C'),
+                Text(
+                  _temp == null
+                      ? 'Temperatura: —'
+                      : 'Temperatura: ${_temp!.toStringAsFixed(1)}°C',
+                ),
                 Text(
                   _wind == null
                       ? 'Vento: —'
                       : 'Vento: ${_wind!.toStringAsFixed(1)} km/h'
-                        '${_windDir == null ? '' : ' (dir $_windDir°)'}',
+                            '${_windDir == null ? '' : ' (dir $_windDir°)'}',
                 ),
                 if (_timeIso != null) Text('Aggiornato: $_timeIso'),
               ],
