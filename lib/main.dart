@@ -1,18 +1,12 @@
 import 'dart:convert'; // per decodificare la risposta meteo
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // per Clipboard (copia JSON)
-import 'package:http/http.dart' as http;
-import 'package:geolocator/geolocator.dart';
 import 'package:share_plus/share_plus.dart';
 import 'login_page.dart';
 import 'models/user.dart';
 import 'user_storage.dart';
 import 'auth.dart';
-import 'dart:io'; // per download JSON
 import 'meteo_page.dart';
-import 'package:flutter_file_dialog/flutter_file_dialog.dart';
-import 'package:flutter_file_dialog/flutter_file_dialog.dart';
-import 'package:open_filex/open_filex.dart';
 
 void main() {
   runApp(const MyApp());
@@ -116,50 +110,42 @@ class _UsersPageState extends State<UsersPage> {
     }).toList();
   }
 
-Future<void> _downloadJson() async {
-  try {
-    final srcPath = await _storage.filePath();
-
-    final params = SaveFileDialogParams(
-      sourceFilePath: srcPath,
-      fileName: 'users.json',
-      mimeTypesFilter: ['application/json', 'text/plain'],
-    );
-
-    final savedPath = await FlutterFileDialog.saveFile(params: params);
-    if (!mounted) return;
-
-    if (savedPath == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Salvataggio annullato')),
-      );
-      return;
-    }
-
-    // Prova ad aprire automaticamente
+  Future<void> _shareJson() async {
     try {
-      final res = await OpenFilex.open(savedPath);
-      if (res.type != ResultType.done) {
-        // fallback: share sheet (l'utente può aprirlo con l'app preferita)
-        await Share.shareXFiles(
-          [XFile(savedPath, mimeType: 'application/json', name: 'users.json')],
-        );
-      }
-    } on MissingPluginException {
-      // fallback se il plugin non è registrato (es. dopo hot-reload)
-      await Share.shareXFiles(
-        [XFile(savedPath, mimeType: 'application/json', name: 'users.json')],
+      // 1) Assicura che il file esista e sia aggiornato
+      await _storage.saveUsers(_users);
+
+      // 2) Condividi
+      final srcPath = await _storage.filePath();
+      await Share.shareXFiles([
+        XFile(srcPath, mimeType: 'application/json', name: 'users.json'),
+      ], text: 'users.json');
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Errore condivisione: ${e.toString()}')),
       );
     }
-  } catch (e) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('Errore: ${e.toString()}')));
   }
-}
 
-
-
+  Future<void> _openJsonPretty() async {
+    final raw = await _storage.readRawJson();
+    final pretty = const JsonEncoder.withIndent('  ').convert(jsonDecode(raw));
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('users.json'),
+        content: SingleChildScrollView(child: SelectableText(pretty)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Chiudi'),
+          ),
+        ],
+      ),
+    );
+  }
 
   String _initials(String name) {
     final parts = name
@@ -305,69 +291,6 @@ Future<void> _downloadJson() async {
     );
   }
 
-  // ---- Meteo (posizione + Open-Meteo) ----
-  Future<Position> _getPosition() async {
-    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled)
-      throw Exception('Servizi di localizzazione disattivati');
-
-    var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied)
-        throw Exception('Permesso posizione negato');
-    }
-    if (permission == LocationPermission.deniedForever) {
-      throw Exception('Permesso negato in modo permanente');
-    }
-    return Geolocator.getCurrentPosition();
-  }
-
-  Future<void> _fetchWeatherFromDevice() async {
-    try {
-      final pos = await _getPosition();
-      final lat = pos.latitude;
-      final lon = pos.longitude;
-
-      final r = await http.get(
-        Uri.parse(
-          'https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current_weather=true',
-        ),
-      );
-      if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
-      final data = jsonDecode(r.body);
-      final cw = data['current_weather'];
-      if (cw == null) throw Exception('Dati meteo non disponibili');
-
-      final code = (cw['weathercode'] as num).toInt();
-      String desc;
-      if (code == 0)
-        desc = 'Sereno';
-      else if ([1, 2, 3].contains(code))
-        desc = 'Variabile';
-      else if ([45, 48].contains(code))
-        desc = 'Nebbia';
-      else if ([61, 63, 65].contains(code))
-        desc = 'Pioggia';
-      else if ([71, 73, 75].contains(code))
-        desc = 'Neve';
-      else if ([95].contains(code))
-        desc = 'Temporale';
-      else
-        desc = '—';
-
-      setState(() {
-        _weatherText = '${cw['temperature']}°C, $desc';
-      });
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Meteo: ${e.toString()}')));
-    }
-  }
-  // ----------------------------------------
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -461,20 +384,7 @@ Future<void> _downloadJson() async {
       ),
       body: Column(
         children: [
-          if (_weatherText != null)
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Card(
-                child: ListTile(
-                  leading: const Icon(Icons.cloud_queue),
-                  title: const Text('Meteo attuale'),
-                  subtitle: Text(_weatherText!),
-                  trailing: const Icon(Icons.chevron_right),
-                ),
-              ),
-            ),
-
-          // 🔎 Barra di ricerca
+          // Barra di ricerca
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
             child: TextField(
@@ -544,80 +454,85 @@ Future<void> _downloadJson() async {
       ),
 
       drawer: Drawer(
-  child: SafeArea(
-    child: ListView(
-      children: [
-        const DrawerHeader(
-          child: ListTile(
-            leading: Icon(Icons.apps),
-            title: Text('Menu'),
-            subtitle: Text('Eirsaf Demo'),
-          ),
-        ),
-
-        ListTile(
-          leading: const Icon(Icons.people),
-          title: const Text('Gestione Utenti'),
-          onTap: () {
-            Navigator.pop(context); // sei già su questa pagina
-          },
-        ),
-
-        ListTile(
-          leading: const Icon(Icons.cloud),
-          title: const Text('Meteo'),
-          onTap: () {
-            Navigator.pop(context);
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const MeteoPage()),
-            );
-          },
-        ),
-
-        ListTile(
-          leading: const Icon(Icons.file_download),
-          title: const Text('Scarica dati (JSON)'),
-          onTap: () {
-            Navigator.pop(context);
-            _downloadJson(); // usa il tuo metodo già presente
-          },
-        ),
-
-        const Divider(),
-
-        ListTile(
-          leading: const Icon(Icons.logout),
-          title: const Text('Logout'),
-          onTap: () async {
-            await Auth().logout();
-            if (!context.mounted) return;
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(
-                builder: (_) => LoginPage(
-                  onLogin: (ctx) {
-                    Navigator.pushReplacement(
-                      ctx,
-                      MaterialPageRoute(builder: (_) => const UsersPage()),
-                    );
-                  },
+        child: SafeArea(
+          child: ListView(
+            children: [
+              const DrawerHeader(
+                child: ListTile(
+                  leading: Icon(Icons.apps),
+                  title: Text('Menu'),
+                  subtitle: Text('Eirsaf Demo'),
                 ),
               ),
-              (_) => false,
-            );
-          },
+
+              ListTile(
+                leading: const Icon(Icons.people),
+                title: const Text('Gestione Utenti'),
+                onTap: () {
+                  Navigator.pop(context); // sei già su questa pagina
+                },
+              ),
+
+              ListTile(
+                leading: const Icon(Icons.cloud),
+                title: const Text('Meteo'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const MeteoPage()),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.ios_share),
+                title: const Text('Condividi JSON'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await Future.delayed(const Duration(milliseconds: 250));
+                  await _shareJson();
+                },
+              ),
+
+              ListTile(
+                leading: const Icon(Icons.visibility),
+                title: const Text('Apri JSON (anteprima)'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _openJsonPretty();
+                },
+              ),
+
+              const Divider(),
+
+              ListTile(
+                leading: const Icon(Icons.logout),
+                title: const Text('Logout'),
+                onTap: () async {
+                  await Auth().logout();
+                  if (!context.mounted) return;
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => LoginPage(
+                        onLogin: (ctx) {
+                          Navigator.pushReplacement(
+                            ctx,
+                            MaterialPageRoute(
+                              builder: (_) => const UsersPage(),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    (_) => false,
+                  );
+                },
+              ),
+            ],
+          ),
         ),
-      ],
-    ),
-  ),
-),
-
+      ),
     );
-  }
-
-  Future<void> _exportJson() async {
-    final path = await _storage.filePath();
-    await Share.shareXFiles([XFile(path)], text: 'users.json');
   }
 }
