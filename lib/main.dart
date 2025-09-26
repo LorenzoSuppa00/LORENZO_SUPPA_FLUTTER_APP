@@ -86,7 +86,6 @@ class _UsersPageState extends State<UsersPage> {
   int _nextId = 1;
   final _searchCtrl = TextEditingController();
   String _query = '';
-  String? _weatherText; // es: "24.3°C, Sereno"
 
   @override
   void initState() {
